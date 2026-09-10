@@ -1,0 +1,49 @@
+name: Recheck external review
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+
+permissions:
+  actions: write
+  pull-requests: read
+
+jobs:
+  recheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Find and rerun external review check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          echo "Review submitted for PR #$PR_NUMBER"
+          echo "Finding the latest external review workflow run..."
+
+          RUN_ID=$(gh api \
+            "repos/$REPOSITORY/actions/workflows/requires-external-review.yml/runs?event=pull_request_target&per_page=50" \
+            --jq "
+              .workflow_runs[]
+              | select(
+                  .pull_requests
+                  | map(.number)
+                  | index($PR_NUMBER | tonumber)
+                )
+              | .id
+            " \
+            | head -n 1)
+
+          if [ -z "$RUN_ID" ]; then
+            echo "::warning::Could not find an existing external review workflow run for PR #$PR_NUMBER."
+            exit 0
+          fi
+
+          echo "Found workflow run: $RUN_ID"
+          echo "Rerunning external review workflow..."
+
+          gh run rerun "$RUN_ID"
+
+          echo "External review workflow rerun requested."
