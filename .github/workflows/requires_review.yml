@@ -10,10 +10,6 @@ on:
       - labeled
       - unlabeled
 
-  pull_request_review:
-    types:
-      - submitted
-
 permissions:
   contents: read
   pull-requests: write
@@ -34,8 +30,13 @@ jobs:
         run: |
           echo "Checking PR #$PR_NUMBER"
 
-          # Skip if PR already has the approval label
-          LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
+          # ---------------------------------------------------------
+          # 1. Skip if PR already has the approval label
+          # ---------------------------------------------------------
+
+          LABELS=$(gh pr view "$PR_NUMBER" \
+            --json labels \
+            --jq '.labels[].name')
 
           for label in $LABELS; do
             if [[ "$label" == "external-reviewer-approved" ]]; then
@@ -44,14 +45,20 @@ jobs:
             fi
           done
 
-          # Get PR author
+          # ---------------------------------------------------------
+          # 2. Get PR author
+          # ---------------------------------------------------------
+
           PR_AUTHOR=$(gh pr view "$PR_NUMBER" \
             --json author \
             --jq '.author.login')
 
           echo "PR author: @$PR_AUTHOR"
 
-          # Build reviewer map from CODEOWNERS
+          # ---------------------------------------------------------
+          # 3. Build reviewer map from CODEOWNERS
+          # ---------------------------------------------------------
+
           declare -a PATTERNS=()
           declare -A PATTERN_REVIEWERS=()
 
@@ -65,7 +72,10 @@ jobs:
             PATTERN_REVIEWERS["$pattern"]="$owners"
           done < CODEOWNERS
 
-          # Get changed files from the PR API
+          # ---------------------------------------------------------
+          # 4. Get changed files
+          # ---------------------------------------------------------
+
           CHANGED_FILES=$(gh pr view "$PR_NUMBER" \
             --json files \
             --jq '.files[].path')
@@ -86,7 +96,11 @@ jobs:
               if [[ $file == $glob ]]; then
                 reviewers="${PATTERN_REVIEWERS[$pattern]}"
 
-                # Skip if PR author is one of the code owners.
+                # -------------------------------------------------
+                # PR author is a CODEOWNER.
+                # No external review required.
+                # -------------------------------------------------
+
                 IS_OWNER=false
 
                 for owner in $reviewers; do
@@ -111,16 +125,23 @@ jobs:
             done
           done
 
-          # No files require external review.
+          # ---------------------------------------------------------
+          # 5. No external review required
+          # ---------------------------------------------------------
+
           if [ "$MATCH" = false ]; then
             echo "No files requiring external review were modified."
             exit 0
           fi
 
-          # Get all PR reviews.
+          # ---------------------------------------------------------
+          # 6. Check CODEOWNER approvals
+          #
+          # Any matching CODEOWNER approval is sufficient.
+          # ---------------------------------------------------------
+
           REVIEWS=$(gh pr view "$PR_NUMBER" --json reviews)
 
-          # Any matching CODEOWNER approval is sufficient.
           APPROVED=false
           APPROVED_BY=""
 
@@ -148,16 +169,25 @@ jobs:
             done
           done
 
-          # At least one matching CODEOWNER approved the PR.
+          # ---------------------------------------------------------
+          # 7. CODEOWNER approval found
+          # ---------------------------------------------------------
+
           if [ "$APPROVED" = true ]; then
             echo "External review requirement satisfied by @$APPROVED_BY."
             exit 0
           fi
 
-          # No matching CODEOWNER approval found.
+          # ---------------------------------------------------------
+          # 8. No CODEOWNER approval
+          # ---------------------------------------------------------
+
           echo "::error::No required CODEOWNER has approved this PR."
 
-          # Post a comment only once per PR.
+          # ---------------------------------------------------------
+          # 9. Post comment only once
+          # ---------------------------------------------------------
+
           MARKER="<!-- requires-external-review -->"
 
           EXISTING=$(gh pr view "$PR_NUMBER" \
