@@ -809,7 +809,7 @@ const tzEdge = {
         key: ["regulator_cycle"],
         convertSet: async (entity, key, value) => {
             const num = Math.round(Number(value));
-            if (Number.isNaN(num) || num < 1 || num > 30) throw new Error(`Invalid regulator_cycle: ${value}`);
+            if (Number.isNaN(num) || num < 0 || num > 30) throw new Error(`Invalid regulator_cycle: ${value}`);
             await writeEdgeHvac(entity, 0x8007, num, Zcl.DataType.UINT8);
             return {state: {regulator_cycle: num}};
         },
@@ -1079,7 +1079,7 @@ export const definitions: DefinitionWithExtend[] = [
                 .withLocalTemperatureCalibration(-5, 5, 0.5),
             e.numeric("max_heat_temp", ea.ALL).withUnit("°C").withValueMin(15).withValueMax(35).withValueStep(0.5).withLabel("Max heat temperature"),
             e.enum("thermostat_mode", ea.ALL, ["manual", "schedule", "regulator"]).withLabel("Thermostat mode"),
-            e.enum("thermostat_mode_extra", ea.ALL, ["eco", "frost", "holiday"]).withLabel("Special mode"),
+            e.enum("thermostat_mode_extra", ea.ALL, ["eco", "frost", "holiday", "manual"]).withLabel("Special mode"),
             e
                 .enum("sensor_mode", ea.ALL, ["air", "floor", "both", "percent"])
                 .withLabel("Sensor mode")
@@ -1096,7 +1096,7 @@ export const definitions: DefinitionWithExtend[] = [
             e
                 .numeric("regulator_cycle", ea.ALL)
                 .withUnit("min")
-                .withValueMin(1)
+                .withValueMin(0)
                 .withValueMax(30)
                 .withValueStep(1)
                 .withLabel("Regulator cycle duration"),
@@ -2434,7 +2434,8 @@ export const definitions: DefinitionWithExtend[] = [
         description: "Zigbee movement sensor",
         fromZigbee: [fz.ias_occupancy_alarm_1],
         toZigbee: [],
-        exposes: [e.occupancy()],
+        exposes: [e.occupancy(), e.tamper()],
+        extend: [m.battery({voltage: true, lowStatus: true})],
     },
     {
         zigbeeModel: ["4512764"],
@@ -2697,12 +2698,13 @@ export const definitions: DefinitionWithExtend[] = [
         model: "4512792",
         vendor: "Namron",
         description: "Simplify 1-2p relay (Zigbee / BT)",
+        version: "0.0.1",
         extend: [
             m.onOff(),
             m.electricityMeter({
-                power: {multiplier: 1, divisor: 10}, // W
+                power: {multiplier: 1, divisor: 1}, // W
                 voltage: {multiplier: 1, divisor: 10}, // V -> 2383 -> 238.3
-                current: {multiplier: 1, divisor: 100}, // A
+                current: {multiplier: 1, divisor: 1000}, // mA -> 4700 -> 4.7
                 energy: {multiplier: 1, divisor: 100}, // kWh
             }),
         ],

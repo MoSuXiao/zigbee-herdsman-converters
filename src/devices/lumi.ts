@@ -29,6 +29,7 @@ const {
     lumiOverloadProtection,
     lumiLedIndicator,
     lumiButtonLock,
+    lumiChildLock,
     lumiMotorSpeed,
     lumiCurtainSpeed,
     lumiCurtainManualOpenClose,
@@ -193,6 +194,24 @@ export const definitions: DefinitionWithExtend[] = [
             m.light({effect: false, powerOnBehavior: false, colorTemp: {range: [153, 370]}}),
             m.ignoreClusterReport({cluster: "hvacFanCtrl"}),
             lumiBathroomHeaterT1(),
+        ],
+    },
+    {
+        zigbeeModel: ["lumi.curtain.acn011"],
+        model: "ZNMHLDJ01LM",
+        vendor: "Aqara",
+        description: "Smart vertical blinds motor H1",
+        extend: [
+            lumi.modernExtend.addManuSpecificLumiCluster(),
+            m.identify(),
+            m.windowCovering({controls: ["lift", "tilt"], coverInverted: true}),
+            lumiCurtainManualOpenClose({valueOn: ["ON", 0], valueOff: ["OFF", 1]}),
+            lumiCurtainStatus({access: "STATE_GET"}),
+            lumiCurtainLastManualOperation({access: "STATE_GET"}),
+            lumiCurtainTraverseTime({access: "STATE_GET"}),
+            lumiCurtainCalibrationStatus({access: "STATE_GET"}),
+            lumiCurtainCalibrated({access: "STATE_GET"}),
+            lumiCurtainIdentifyBeep({lookup: {off: 0, short: 1, long: 2}}),
         ],
     },
     {
@@ -1223,8 +1242,14 @@ export const definitions: DefinitionWithExtend[] = [
             e.energy(),
             e.action(["single", "double", "release", "hold"]),
             e.enum("operation_mode", ea.ALL, ["control_relay", "decoupled"]).withDescription("Decoupled mode"),
+            e.power_outage_memory().withAccess(ea.STATE_SET),
         ],
-        toZigbee: [tz.on_off, lumi.toZigbee.lumi_switch_operation_mode_basic, lumi.toZigbee.lumi_power],
+        toZigbee: [
+            tz.on_off,
+            lumi.toZigbee.lumi_switch_operation_mode_basic,
+            lumi.toZigbee.lumi_power,
+            lumi.toZigbee.lumi_switch_power_outage_memory,
+        ],
         endpoint: (device) => {
             return {system: 1};
         },
@@ -2084,6 +2109,13 @@ export const definitions: DefinitionWithExtend[] = [
         extend: [m.quirkCheckinInterval("1_HOUR"), m.iasZoneAlarm({zoneType: "water_leak", zoneAttributes: ["alarm_1", "battery_low"]})],
     },
     {
+        zigbeeModel: ["lumi.flood.agl02\tF\x01"],
+        model: "SJCGQ12LM-ES",
+        vendor: "Aqara",
+        description: "Water leak sensor T1 engineering test version (no specific battery percentage support, not compatible with Aqara Home app)",
+        extend: [m.iasZoneAlarm({zoneType: "water_leak", zoneAttributes: ["alarm_1", "battery_low"]})],
+    },
+    {
         zigbeeModel: ["lumi.flood.agl02"],
         model: "SJCGQ12LM",
         vendor: "Aqara",
@@ -2216,6 +2248,7 @@ export const definitions: DefinitionWithExtend[] = [
         vendor: "Aqara",
         extend: [
             lumi.modernExtend.addManuSpecificLumiCluster(),
+            lumiSetEventMode(),
             m.forceDeviceType({type: "Router"}),
             lumiZigbeeOTA(),
             m.poll({
@@ -5038,6 +5071,65 @@ export const definitions: DefinitionWithExtend[] = [
                 access: "ALL",
                 zigbeeCommandOptions: {manufacturerCode},
             }),
+        ],
+    },
+    {
+        zigbeeModel: ["lumi.plug.aeu002"],
+        model: "WP-P09D",
+        vendor: "Aqara",
+        description: "Wall outlet H2 UK",
+        extend: [
+            lumi.modernExtend.addManuSpecificLumiCluster(),
+            m.deviceEndpoints({endpoints: {"1": 1, "2": 2, usb: 3}}),
+            m.forcePowerSource({powerSource: "Mains (single phase)"}),
+            lumiZigbeeOTA(),
+            // This model has no device temperature sensor.
+            lumiOnOff({endpointNames: ["1", "2", "usb"], powerOutageMemory: "enum", deviceTemperature: false}),
+            // The three haElectricalMeasurement endpoints do not line up with the on/off endpoints:
+            // endpoint 1 measures the whole outlet, endpoint 2 socket 1 + USB combined and endpoint 3 socket 2.
+            m.numeric({
+                name: "power",
+                cluster: "haElectricalMeasurement",
+                attribute: "activePower",
+                endpointNames: ["1"],
+                label: "Power",
+                description: "Total power consumption of the outlet",
+                unit: "W",
+                access: "STATE",
+            }),
+            m.numeric({
+                name: "power",
+                cluster: "haElectricalMeasurement",
+                attribute: "activePower",
+                endpointNames: ["2"],
+                label: "Power socket 1 + USB",
+                description: "Combined power consumption of socket 1 and the USB ports",
+                unit: "W",
+                access: "STATE",
+            }),
+            m.numeric({
+                name: "power",
+                cluster: "haElectricalMeasurement",
+                attribute: "activePower",
+                endpointNames: ["usb"],
+                label: "Power socket 2",
+                description: "Power consumption of socket 2",
+                unit: "W",
+                access: "STATE",
+            }),
+            // Voltage is not reported by this model.
+            lumiElectricityMeter({voltage: false}),
+            lumiMultiClick({description: "Multi-click mode for the socket 1 button", endpointName: "1"}),
+            lumiMultiClick({description: "Multi-click mode for the socket 2 button", endpointName: "2"}),
+            lumiAction({endpointNames: ["1", "2"], actionLookup: {hold: 0, single: 1, double: 2, release: 255}}),
+            lumiChildLock({description: "Disables the socket 1 button", endpointName: "1"}),
+            lumiChildLock({description: "Disables the socket 2 button", endpointName: "2"}),
+            // access is STATE_SET rather than the default ALL: reading this attribute back was reported to
+            // fail on this device, see https://github.com/Koenkk/zigbee-herdsman-converters/pull/11123
+            lumiOverloadProtection({valueMax: 3250, access: "STATE_SET"}),
+            lumiLedIndicator(),
+            lumiFlipIndicatorLight(),
+            m.identify(),
         ],
     },
     {

@@ -367,11 +367,23 @@ export const numericAttributes2Payload = async (
                 } else if (["WXKG14LM", "WXKG16LM", "WXKG17LM"].includes(model.model)) {
                     payload.click_mode = getFromLookup(value, {1: "fast", 2: "multi"});
                 } else if (
-                    ["WXCJKG11LM", "WXCJKG12LM", "WXCJKG13LM", "ZNMS12LM", "ZNCLBL01LM", "RTCGQ12LM", "RTCGQ13LM", "RTCGQ14LM"].includes(model.model)
+                    [
+                        "WXCJKG11LM",
+                        "WXCJKG12LM",
+                        "WXCJKG13LM",
+                        "ZNMS12LM",
+                        "ZNCLBL01LM",
+                        "RTCGQ12LM",
+                        "RTCGQ13LM",
+                        "RTCGQ14LM",
+                        "ZNJLBL01LM",
+                    ].includes(model.model)
                 ) {
                     // We don't know what the value means for these devices.
                     // https://github.com/Koenkk/zigbee2mqtt/issues/11126
                     // https://github.com/Koenkk/zigbee2mqtt/issues/12279
+                    // For ZNJLBL01LM this is unreliable, cannot determine OPEN/CLOSE based on it
+                    // https://github.com/Koenkk/zigbee2mqtt/issues/33001
                 } else if (["RTCGQ15LM"].includes(model.model)) {
                     payload.occupancy = value;
                 } else if (["PS-S04D"].includes(model.model)) {
@@ -2446,11 +2458,20 @@ export const lumiModernExtend = {
             ],
         };
     },
-    lumiOnOff: (args?: modernExtend.OnOffArgs & {operationMode?: boolean; powerOutageMemory?: "binary" | "enum"; lockRelay?: boolean}) => {
-        args = {operationMode: false, lockRelay: false, ...args};
+    lumiOnOff: (
+        args?: modernExtend.OnOffArgs & {
+            operationMode?: boolean;
+            powerOutageMemory?: "binary" | "enum";
+            lockRelay?: boolean;
+            deviceTemperature?: boolean;
+            powerOutageCount?: boolean;
+        },
+    ) => {
+        args = {operationMode: false, lockRelay: false, deviceTemperature: true, powerOutageCount: true, ...args};
         const result = modernExtend.onOff({powerOnBehavior: false, ...args});
         result.fromZigbee.push(fromZigbee.lumi_specific);
-        result.exposes.push(e.device_temperature(), e.power_outage_count());
+        if (args.deviceTemperature) result.exposes.push(e.device_temperature());
+        if (args.powerOutageCount) result.exposes.push(e.power_outage_count());
         if (args.powerOutageMemory === "binary") {
             const extend = lumiModernExtend.lumiPowerOutageMemory();
             result.toZigbee.push(...extend.toZigbee);
@@ -2876,8 +2897,9 @@ export const lumiModernExtend = {
             zigbeeCommandOptions: {manufacturerCode},
             ...args,
         }),
-    lumiElectricityMeter: (): ModernExtend => {
-        const exposes = [e.energy(), e.voltage(), e.current()];
+    lumiElectricityMeter: (args?: {energy?: boolean; voltage?: boolean; current?: boolean}): ModernExtend => {
+        const {energy = true, voltage = true, current = true} = args ?? {};
+        const exposes = [...(energy ? [e.energy()] : []), ...(voltage ? [e.voltage()] : []), ...(current ? [e.current()] : [])];
         const fromZigbee = [
             {
                 cluster: "manuSpecificLumi",
@@ -3004,6 +3026,19 @@ export const lumiModernExtend = {
             valueOn: ["ON", 0],
             valueOff: ["OFF", 1],
             description: "Disables the physical switch button",
+            access: "ALL",
+            entityCategory: "config",
+            zigbeeCommandOptions: {manufacturerCode},
+            ...args,
+        }),
+    lumiChildLock: (args?: Partial<modernExtend.BinaryArgs<"manuSpecificLumi", ManuSpecificLumi>>) =>
+        modernExtend.binary<"manuSpecificLumi", ManuSpecificLumi>({
+            name: "child_lock",
+            cluster: "manuSpecificLumi",
+            attribute: {ID: 0x0285, type: 0x20},
+            valueOn: ["LOCK", 1],
+            valueOff: ["UNLOCK", 0],
+            description: "Disables the physical button",
             access: "ALL",
             entityCategory: "config",
             zigbeeCommandOptions: {manufacturerCode},
@@ -7742,7 +7777,7 @@ export const fromZigbee = {
             } else if (state === 1) {
                 if (globalStore.getValue(msg.endpoint, "hold")) {
                     const duration = Date.now() - globalStore.getValue(msg.endpoint, "hold");
-                    publish({action: "release", duration: duration});
+                    publish({action: "release", action_duration: duration});
                     globalStore.putValue(msg.endpoint, "hold", false);
                 }
 
@@ -8928,7 +8963,7 @@ export const toZigbee = {
                     {513: {value: value ? 1 : 0, type: 0x10}},
                     manufacturerOptions.lumi,
                 );
-            } else if (["ZNCZ02LM", "QBCZ11LM", "LLKZMK11LM"].includes(meta.mapped.model)) {
+            } else if (["ZNCZ02LM", "QBCZ11LM", "LLKZMK11LM", "QBKG11LM"].includes(meta.mapped.model)) {
                 const payload = value
                     ? [
                           [0xaa, 0x80, 0x05, 0xd1, 0x47, 0x07, 0x01, 0x10, 0x01],
