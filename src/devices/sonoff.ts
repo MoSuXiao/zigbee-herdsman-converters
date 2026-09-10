@@ -13377,7 +13377,7 @@ export const definitions: DefinitionWithExtend[] = [
                 name: "ac_voltage_max_overload",
                 cluster: "customClusterEwelink",
                 attribute: "acVoltageMaxOverload",
-                description: "AC voltage overload threshold (runtime validated by detected supply band)",
+                description: "AC voltage overload threshold (runtime validated by detected supply band) test",
                 unit: "V",
                 scale: 1000,
                 valueMin: 85,
